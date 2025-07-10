@@ -45,9 +45,9 @@ InverseDynamicsFormulationAccForce::InverseDynamicsFormulationAccForce(
   m_hqpData.resize(2);
   m_Jc.setZero(m_k, m_v);
   h_fext.setZero(m_v);
-  m_hqpData[0].push_back(
-      solvers::make_pair<double, std::shared_ptr<ConstraintBase> >(
-          1.0, m_baseDynamics));
+  // m_hqpData[0].push_back(
+  //     solvers::make_pair<double, std::shared_ptr<ConstraintBase> >(
+  //         1.0, m_baseDynamics));
 }
 
 Data &InverseDynamicsFormulationAccForce::data() { return m_data; }

@@ -153,6 +153,7 @@ set(${PROJECT_NAME}_TASKS_HEADERS
     include/tsid/tasks/task-contact-force.hpp
     include/tsid/tasks/task-com-equality.hpp
     include/tsid/tasks/task-se3-equality.hpp
+    include/tsid/tasks/task-se3-equality-unactuation.hpp
     include/tsid/tasks/task-contact-force-equality.hpp
     include/tsid/tasks/task-cop-equality.hpp
     include/tsid/tasks/task-actuation-equality.hpp
@@ -268,6 +269,7 @@ set(${PROJECT_NAME}_TASKS_SOURCES
     src/tasks/task-capture-point-inequality.cpp
     src/tasks/task-motion.cpp
     src/tasks/task-se3-equality.cpp
+    src/tasks/task-se3-equality-unactuation.cpp
     src/tasks/task-angular-momentum-equality.cpp
     src/tasks/task-two-frames-equality.cpp)
 
@@ -309,7 +311,8 @@ set(${PROJECT_NAME}_ROBOTS_SOURCES src/robots/robot-wrapper.cpp)
 set(${PROJECT_NAME}_FORMULATIONS_SOURCES
     src/formulations/contact-level.cpp
     src/formulations/inverse-dynamics-formulation-base.cpp
-    src/formulations/inverse-dynamics-formulation-acc-force.cpp)
+    src/formulations/inverse-dynamics-formulation-acc-force.cpp
+    src/formulations/inverse-dynamics-formulation-acc-force-onship.cpp)
 
 set(${PROJECT_NAME}_SOURCES
     src/utils/statistics.cpp
