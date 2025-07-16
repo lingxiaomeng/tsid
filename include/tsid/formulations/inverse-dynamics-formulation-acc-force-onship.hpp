@@ -24,82 +24,104 @@
 #include "tsid/formulations/inverse-dynamics-formulation-base.hpp"
 #include "tsid/math/constraint-equality.hpp"
 
-namespace tsid {
+namespace tsid
+{
 
-class InverseDynamicsFormulationAccForceOnShip
-    : public InverseDynamicsFormulationBase {
- public:
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  class InverseDynamicsFormulationAccForceOnShip
+      : public InverseDynamicsFormulationBase
+  {
+  public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  typedef pinocchio::Data Data;
-  typedef math::Vector Vector;
-  typedef math::Matrix Matrix;
-  typedef math::ConstRefVector ConstRefVector;
-  typedef tasks::TaskBase TaskBase;
-  typedef tasks::TaskMotion TaskMotion;
-  typedef tasks::TaskContactForce TaskContactForce;
-  typedef tasks::TaskActuation TaskActuation;
-  typedef contacts::MeasuredForceBase MeasuredForceBase;
-  typedef solvers::HQPOutput HQPOutput;
+    typedef pinocchio::Data Data;
+    typedef math::Vector Vector;
+    typedef math::Matrix Matrix;
+    typedef math::ConstRefVector ConstRefVector;
+    typedef tasks::TaskBase TaskBase;
+    typedef tasks::TaskMotion TaskMotion;
+    typedef tasks::TaskContactForce TaskContactForce;
+    typedef tasks::TaskActuation TaskActuation;
+    typedef contacts::MeasuredForceBase MeasuredForceBase;
+    typedef solvers::HQPOutput HQPOutput;
 
-  InverseDynamicsFormulationAccForceOnShip(const std::string& name,
-                                     RobotWrapper& robot, bool verbose = false);
+    InverseDynamicsFormulationAccForceOnShip(const std::string &name,
+                                             RobotWrapper &robot, bool verbose = false);
 
-  Data& data() override;
+    Data &data() override;
 
-  unsigned int nVar() const override;
-  unsigned int nEq() const override;
-  unsigned int nIn() const override;
+    unsigned int nVar() const override;
+    unsigned int nEq() const override;
+    unsigned int nIn() const override;
 
-  bool addMotionTask(TaskMotion& task, double weight,
-                     unsigned int priorityLevel,
-                     double transition_duration = 0.0) override;
+    bool addMotionTask(TaskMotion &task, double weight,
+                       unsigned int priorityLevel,
+                       double transition_duration = 0.0) override;
 
+    bool addActuationTask(TaskActuation &task, double weight,
+                          unsigned int priorityLevel,
+                          double transition_duration = 0.0) override;
 
-  bool addActuationTask(TaskActuation& task, double weight,
-                        unsigned int priorityLevel,
-                        double transition_duration = 0.0) override;
+    bool updateTaskWeight(const std::string &task_name, double weight) override;
 
-  bool updateTaskWeight(const std::string& task_name, double weight) override;
+    bool removeTask(const std::string &taskName,
+                    double transition_duration = 0.0) override;
 
-  bool removeTask(const std::string& taskName,
-                  double transition_duration = 0.0) override;
+    const HQPData &computeProblemData(double time, ConstRefVector q,
+                                      ConstRefVector v) override;
 
-
-  const HQPData& computeProblemData(double time, ConstRefVector q,
-                                    ConstRefVector v) override;
-
-  const Vector& getActuatorForces(const HQPOutput& sol) override;
-  const Vector& getAccelerations(const HQPOutput& sol) override;
+    const HQPData &computeProblemData(double time, ConstRefVector q,
+                                      ConstRefVector v,ConstRefVector base_a);
 
 
- public:
-  template <class TaskLevelPointer>
-  void addTask(TaskLevelPointer task, double weight,
-               unsigned int priorityLevel);
+    const Vector &getActuatorForces(const HQPOutput &sol) override;
+    const Vector &getAccelerations(const HQPOutput &sol) override;
 
-  void resizeHqpData();
+    bool getContactForces(const std::string &name, const HQPOutput &sol,
+                          RefVector f) override;
+    bool addMeasuredForce(MeasuredForceBase &measuredForce) override;
+    bool removeRigidContact(const std::string &contactName,
+                            double transition_duration = 0.0) override;
 
-  bool removeFromHqpData(const std::string& name);
+    bool removeMeasuredForce(const std::string &measuredForceName) override;
+    TSID_DEPRECATED bool addRigidContact(ContactBase &contact) override;
 
-  bool decodeSolution(const HQPOutput& sol);
+    bool updateRigidContactWeights(const std::string &contact_name,
+                                   double force_regularization_weight,
+                                   double motion_weight = -1.0) override;
+    bool addRigidContact(ContactBase &contact, double force_regularization_weight,
+                         double motion_weight = 1.0,
+                         unsigned int motion_priority_level = 0) override;
+    bool addForceTask(TaskContactForce &task, double weight,
+                      unsigned int priorityLevel,
+                      double transition_duration = 0.0) override;
+    const Vector &getContactForces(const HQPOutput &sol) override;
 
-  Data m_data;
-  HQPData m_hqpData;
-  std::vector<std::shared_ptr<TaskLevel>> m_taskMotions;
-  std::vector<std::shared_ptr<TaskLevel>> m_taskActuations;
+  public:
+    template <class TaskLevelPointer>
+    void addTask(TaskLevelPointer task, double weight,
+                 unsigned int priorityLevel);
 
-  double m_t;         /// time
-  unsigned int m_v;   /// number of acceleration variables
-  unsigned int m_u;   /// number of unactuated DoFs
-  unsigned int m_eq;  /// number of equality constraints
-  unsigned int m_in;  /// number of inequality constraints
+    void resizeHqpData();
 
-  bool m_solutionDecoded;
-  Vector m_dv;
-  Vector m_f;
-  Vector m_tau;
+    bool removeFromHqpData(const std::string &name);
 
-};
-}  // namespace tsid
-#endif  // ifndef __invdyn_inverse_dynamics_formulation_acc_force_hpp__
+    bool decodeSolution(const HQPOutput &sol);
+
+    Data m_data;
+    HQPData m_hqpData;
+    std::vector<std::shared_ptr<TaskLevel>> m_taskMotions;
+    std::vector<std::shared_ptr<TaskLevel>> m_taskActuations;
+
+    double m_t;        /// time
+    unsigned int m_v;  /// number of acceleration variables
+    unsigned int m_u;  /// number of unactuated DoFs
+    unsigned int m_eq; /// number of equality constraints
+    unsigned int m_in; /// number of inequality constraints
+
+    bool m_solutionDecoded;
+    Vector m_dv;
+    Vector m_f;
+    Vector m_tau;
+  };
+} // namespace tsid
+#endif // ifndef __invdyn_inverse_dynamics_formulation_acc_force_hpp__

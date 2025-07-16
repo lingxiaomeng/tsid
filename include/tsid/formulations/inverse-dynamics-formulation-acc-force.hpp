@@ -106,6 +106,8 @@ class InverseDynamicsFormulationAccForce
   bool getContactForces(const std::string& name, const HQPOutput& sol,
                         RefVector f) override;
 
+
+                        
  public:
   template <class TaskLevelPointer>
   void addTask(TaskLevelPointer task, double weight,

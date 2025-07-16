@@ -232,7 +232,8 @@ set(${PROJECT_NAME}_ROBOTS_HEADERS include/tsid/robots/fwd.hpp
 set(${PROJECT_NAME}_FORMULATIONS_HEADERS
     include/tsid/formulations/contact-level.hpp
     include/tsid/formulations/inverse-dynamics-formulation-base.hpp
-    include/tsid/formulations/inverse-dynamics-formulation-acc-force.hpp)
+    include/tsid/formulations/inverse-dynamics-formulation-acc-force.hpp
+    include/tsid/formulations/inverse-dynamics-formulation-acc-force-onship.hpp)
 
 set(${PROJECT_NAME}_HEADERS
     include/tsid/macros.hpp
