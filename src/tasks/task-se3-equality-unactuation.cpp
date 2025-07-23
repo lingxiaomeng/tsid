@@ -195,7 +195,6 @@ const ConstraintBase& TaskSE3EqualityUnActuation::compute(const double, ConstRef
     m_J_rotated.noalias() = m_wMl.toActionMatrix() * m_J;
     m_J = m_J_rotated;
     m_J.leftCols(6).setZero();
-    std::cout << "m_J=" << m_J << std::endl;
   }
 
   m_v_error_vec = m_v_error.toVector();
