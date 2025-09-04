@@ -52,12 +52,25 @@ TaskSE3EqualityUnActuation::TaskSE3EqualityUnActuation(const std::string& name, 
   m_a_des.setZero(6);
   m_J.setZero(6, robot.nv());
   m_J_rotated.setZero(6, robot.nv());
-
+  m_smc_term.setZero(6);
   m_mask.resize(6);
   m_mask.fill(1.);
   setMask(m_mask);
 
   m_local_frame = true;
+
+  m_smc_K.setZero(6);
+  m_smc_a.resize(6);
+  m_smc_a.fill(1.0);
+  m_smc_epsilon.setZero(6);
+}
+
+void TaskSE3EqualityUnActuation::setSmcGains(ConstRefVector K, ConstRefVector a) {
+  PINOCCHIO_CHECK_INPUT_ARGUMENT(K.size() == 6,
+                                 "The size of the K vector needs to equal 6");
+  m_smc_K = K;
+  m_smc_a = a;
+  m_smc_epsilon = a.cwiseInverse()/2*3.1415926;
 }
 
 void TaskSE3EqualityUnActuation::setMask(math::ConstRefVector mask) {
@@ -181,7 +194,15 @@ const ConstraintBase& TaskSE3EqualityUnActuation::compute(const double, ConstRef
     // cout<<"m_p_error_vec="<<m_p_error_vec.head<3>().transpose()<<endl;
     // cout<<"oMi-m_M_ref
     // ="<<-(oMi.translation()-m_M_ref.translation()).transpose()<<endl;
-
+    m_smc_term = m_p_error_vec.cwiseProduct(m_smc_a);
+    for (int i = 0; i < 6; i++) {
+      if (m_smc_term(i) > m_smc_epsilon(i))
+        m_smc_term(i) = m_smc_K(i);
+      else if (m_smc_term(i) < -m_smc_epsilon(i))
+        m_smc_term(i) = -m_smc_K(i);
+      else
+        m_smc_term(i) = m_smc_K(i)*sin(m_smc_term(i));
+    }
     m_v_error =
         m_v_ref - m_wMl.act(v_frame);  // vel err in local world-oriented frame
 
@@ -189,7 +210,7 @@ const ConstraintBase& TaskSE3EqualityUnActuation::compute(const double, ConstRef
 
     // desired acc in local world-oriented frame
     m_a_des = m_Kp.cwiseProduct(m_p_error_vec) +
-              m_Kd.cwiseProduct(m_v_error.toVector()) + m_a_ref.toVector();
+              m_Kd.cwiseProduct(m_v_error.toVector()) + m_a_ref.toVector() + m_smc_term;
 
     // Use an explicit temporary `m_J_rotated` here to avoid allocations.
     m_J_rotated.noalias() = m_wMl.toActionMatrix() * m_J;
