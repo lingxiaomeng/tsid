@@ -189,7 +189,7 @@ const HQPData &InverseDynamicsFormulationAccForceOnShip::computeProblemData(
   m_robot.computeAllTerms(m_data, q, v);
 
   const Matrix &M_a = m_robot.mass(m_data).bottomRows(m_v - m_u);
-  const Matrix &M_vq = m_robot.mass(m_data).bottomRows(m_u).leftCols(m_v - m_u);
+  const Matrix &M_vq = m_robot.mass(m_data).bottomRows(m_v - m_u).leftCols(m_u);
   Vector h_b = M_vq * base_a;
   const Vector &h_a =
       m_robot.nonLinearEffects(m_data).tail(m_v - m_u) + h_b;
