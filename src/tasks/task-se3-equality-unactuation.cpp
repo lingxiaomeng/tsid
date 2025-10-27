@@ -162,7 +162,7 @@ void TaskSE3EqualityUnActuation::useLocalFrame(bool local_frame) {
   m_local_frame = local_frame;
 }
 
-const Vector& TaskSE3EqualityUnActuation::computeSaturation(ConstRefVector s, ConstRefVector phi)
+Vector TaskSE3EqualityUnActuation::computeSaturation(ConstRefVector s, ConstRefVector phi)
 {
   // Computes sat(s / phi) component-wise
   // Assumes phi(i) > 0
@@ -207,13 +207,11 @@ const ConstraintBase& TaskSE3EqualityUnActuation::compute(const double, ConstRef
         m_v_ref - m_wMl.act(v_frame);  // vel err in local world-oriented frame
 
     m_drift = m_wMl.act(m_drift);
-
     Eigen::VectorXd v_error_vec = m_v_error.toVector(); // This is -e_dot
-    Eigen::VectorXd s = -v_error_vec + m_smc_lambda.cwiseProduct(m_p_error_vec);
+    Eigen::VectorXd s = v_error_vec + m_smc_lambda.cwiseProduct(m_p_error_vec);
     Eigen::VectorXd sat_s = computeSaturation(s, m_smc_phi);
     m_smc_term =  m_smc_lambda.cwiseProduct(v_error_vec) 
-              - m_smc_K.cwiseProduct(s) - m_smc_H.cwiseProduct(sat_s);
-
+              + m_smc_K.cwiseProduct(s) + m_smc_H.cwiseProduct(sat_s);
     // desired acc in local world-oriented frame
     m_a_des = m_Kp.cwiseProduct(m_p_error_vec) +
               m_Kd.cwiseProduct(m_v_error.toVector()) + m_a_ref.toVector() + m_smc_term;

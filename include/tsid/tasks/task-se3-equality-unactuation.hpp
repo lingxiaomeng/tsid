@@ -92,7 +92,7 @@ class TaskSE3EqualityUnActuation : public TaskMotion {
   void Kd(ConstRefVector Kp);
   void setSmcGains(ConstRefVector m_smc_lambda, ConstRefVector m_smc_K, ConstRefVector m_smc_H, ConstRefVector m_smc_phi);
 
-  const Vector& computeSaturation(ConstRefVector s, ConstRefVector phi);
+  Vector computeSaturation(ConstRefVector s, ConstRefVector phi);
 
 
   Index frame_id() const;
