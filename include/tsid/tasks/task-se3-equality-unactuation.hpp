@@ -90,7 +90,10 @@ class TaskSE3EqualityUnActuation : public TaskMotion {
   const Vector& Kd() const;
   void Kp(ConstRefVector Kp);
   void Kd(ConstRefVector Kp);
-  void setSmcGains(ConstRefVector K, ConstRefVector a);
+  void setSmcGains(ConstRefVector m_smc_lambda, ConstRefVector m_smc_K, ConstRefVector m_smc_H, ConstRefVector m_smc_phi);
+
+  const Vector& computeSaturation(ConstRefVector s, ConstRefVector phi);
+
 
   Index frame_id() const;
 
@@ -115,18 +118,22 @@ class TaskSE3EqualityUnActuation : public TaskMotion {
   SE3 m_M_ref, m_wMl;
   Vector m_Kp;
   Vector m_Kd;
+  Vector m_smc_lambda;
   Vector m_smc_K;
-  Vector m_smc_a;
+  Vector m_smc_H;
+  Vector m_smc_phi;
+
   Vector m_a_des, m_a_des_masked;
   Motion m_drift;
   Vector m_drift_masked;
   Vector m_smc_term;
-  Vector m_smc_epsilon;
+
   Matrix6x m_J;
   Matrix6x m_J_rotated;
   ConstraintEquality m_constraint;
   TrajectorySample m_ref;
   bool m_local_frame;
+  bool m_use_smc;
 };
 
 }  // namespace tasks

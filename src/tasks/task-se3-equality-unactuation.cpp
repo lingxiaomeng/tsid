@@ -58,19 +58,22 @@ TaskSE3EqualityUnActuation::TaskSE3EqualityUnActuation(const std::string& name, 
   setMask(m_mask);
 
   m_local_frame = true;
+  m_use_smc = false;
 
+  m_smc_lambda.setZero(6);
   m_smc_K.setZero(6);
-  m_smc_a.resize(6);
-  m_smc_a.fill(1.0);
-  m_smc_epsilon.setZero(6);
+  m_smc_H.setZero(6);
+  m_smc_phi.setZero(6);
 }
 
-void TaskSE3EqualityUnActuation::setSmcGains(ConstRefVector K, ConstRefVector a) {
-  PINOCCHIO_CHECK_INPUT_ARGUMENT(K.size() == 6,
+void TaskSE3EqualityUnActuation::setSmcGains(ConstRefVector m_smc_lambda, ConstRefVector m_smc_K, ConstRefVector m_smc_H, ConstRefVector m_smc_phi) {
+  PINOCCHIO_CHECK_INPUT_ARGUMENT(m_smc_K.size() == 6,
                                  "The size of the K vector needs to equal 6");
-  m_smc_K = K;
-  m_smc_a = a;
-  m_smc_epsilon = a.cwiseInverse()/2*3.1415926;
+
+  this->m_smc_lambda = m_smc_lambda;
+  this->m_smc_K = m_smc_K;
+  this->m_smc_H = m_smc_H;
+  this->m_smc_phi = m_smc_phi;
 }
 
 void TaskSE3EqualityUnActuation::setMask(math::ConstRefVector mask) {
@@ -159,6 +162,15 @@ void TaskSE3EqualityUnActuation::useLocalFrame(bool local_frame) {
   m_local_frame = local_frame;
 }
 
+const Vector& TaskSE3EqualityUnActuation::computeSaturation(ConstRefVector s, ConstRefVector phi)
+{
+  // Computes sat(s / phi) component-wise
+  // Assumes phi(i) > 0
+  Eigen::VectorXd s_over_phi = s.cwiseQuotient(phi);
+  return s_over_phi.cwiseMin(1.0).cwiseMax(-1.0);
+}
+
+
 const ConstraintBase& TaskSE3EqualityUnActuation::compute(const double, ConstRefVector,
                                                ConstRefVector, Data& data) {
   SE3 oMi;
@@ -191,22 +203,16 @@ const ConstraintBase& TaskSE3EqualityUnActuation::compute(const double, ConstRef
         m_wMl.toActionMatrix() *  // pos err in local world-oriented frame
         m_p_error.toVector();
 
-    // cout<<"m_p_error_vec="<<m_p_error_vec.head<3>().transpose()<<endl;
-    // cout<<"oMi-m_M_ref
-    // ="<<-(oMi.translation()-m_M_ref.translation()).transpose()<<endl;
-    m_smc_term = m_p_error_vec.cwiseProduct(m_smc_a);
-    for (int i = 0; i < 6; i++) {
-      if (m_smc_term(i) > m_smc_epsilon(i))
-        m_smc_term(i) = m_smc_K(i);
-      else if (m_smc_term(i) < -m_smc_epsilon(i))
-        m_smc_term(i) = -m_smc_K(i);
-      else
-        m_smc_term(i) = m_smc_K(i)*sin(m_smc_term(i));
-    }
     m_v_error =
         m_v_ref - m_wMl.act(v_frame);  // vel err in local world-oriented frame
 
     m_drift = m_wMl.act(m_drift);
+
+    Eigen::VectorXd v_error_vec = m_v_error.toVector(); // This is -e_dot
+    Eigen::VectorXd s = -v_error_vec + m_smc_lambda.cwiseProduct(m_p_error_vec);
+    Eigen::VectorXd sat_s = computeSaturation(s, m_smc_phi);
+    m_smc_term =  m_smc_lambda.cwiseProduct(v_error_vec) 
+              - m_smc_K.cwiseProduct(s) - m_smc_H.cwiseProduct(sat_s);
 
     // desired acc in local world-oriented frame
     m_a_des = m_Kp.cwiseProduct(m_p_error_vec) +
