@@ -27,11 +27,12 @@ using namespace trajectories;
 using namespace pinocchio;
 
 TaskSE3EqualityUnActuation::TaskSE3EqualityUnActuation(const std::string& name, RobotWrapper& robot,
-                                 const std::string& frameName)
+                                 const std::string& frameName, bool use_direct_measurements)
     : TaskMotion(name, robot),
       m_frame_name(frameName),
       m_constraint(name, 6, robot.nv()),
-      m_ref(12, 6) {
+      m_ref(12, 6),
+      m_use_direct_measurements(use_direct_measurements) {
   PINOCCHIO_CHECK_INPUT_ARGUMENT(
       m_robot.model().existFrame(frameName),
       "The frame with name '" + frameName + "' does not exist");
@@ -59,7 +60,6 @@ TaskSE3EqualityUnActuation::TaskSE3EqualityUnActuation(const std::string& name, 
 
   m_local_frame = true;
   m_use_smc = false;
-
   m_smc_lambda.setZero(6);
   m_smc_K.setZero(6);
   m_smc_H.setZero(6);
@@ -85,6 +85,8 @@ void TaskSE3EqualityUnActuation::setMask(math::ConstRefVector mask) {
   m_drift_masked.resize(n);
   m_a_des_masked.resize(n);
 }
+
+
 
 int TaskSE3EqualityUnActuation::dim() const { return (int)m_mask.sum(); }
 
@@ -125,6 +127,7 @@ void TaskSE3EqualityUnActuation::setReference(const SE3& ref) {
   TSID_DISABLE_WARNING_POP
   setReference(s);
 }
+
 
 const TrajectorySample& TaskSE3EqualityUnActuation::getReference() const { return m_ref; }
 
@@ -170,15 +173,26 @@ Vector TaskSE3EqualityUnActuation::computeSaturation(ConstRefVector s, ConstRefV
   return s_over_phi.cwiseMin(1.0).cwiseMax(-1.0);
 }
 
+void TaskSE3EqualityUnActuation::setMeasured(const SE3& p_measured, const Motion& v_measured) {
+  m_p_measured = p_measured;
+  m_v_measured = v_measured;
+}
 
 const ConstraintBase& TaskSE3EqualityUnActuation::compute(const double, ConstRefVector,
                                                ConstRefVector, Data& data) {
   SE3 oMi;
   Motion v_frame;
-  m_robot.framePosition(data, m_frame_id, oMi);
-  m_robot.frameVelocity(data, m_frame_id, v_frame);
-  m_robot.frameClassicAcceleration(data, m_frame_id, m_drift);
 
+  if (m_use_direct_measurements) {
+    oMi = m_p_measured;
+    SE3 mMi_rot;
+    mMi_rot.rotation(oMi.rotation());
+    v_frame = mMi_rot.actInv(m_v_measured);
+  } else {
+    m_robot.framePosition(data, m_frame_id, oMi);
+    m_robot.frameVelocity(data, m_frame_id, v_frame);
+  }
+  m_robot.frameClassicAcceleration(data, m_frame_id, m_drift);
   // @todo Since Jacobian computation is cheaper in world frame
   // we could do all computations in world frame
   m_robot.frameJacobianLocal(data, m_frame_id, m_J);
@@ -202,7 +216,6 @@ const ConstraintBase& TaskSE3EqualityUnActuation::compute(const double, ConstRef
     m_p_error_vec =
         m_wMl.toActionMatrix() *  // pos err in local world-oriented frame
         m_p_error.toVector();
-
     m_v_error =
         m_v_ref - m_wMl.act(v_frame);  // vel err in local world-oriented frame
 

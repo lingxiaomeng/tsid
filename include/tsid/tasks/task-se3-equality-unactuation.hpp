@@ -42,7 +42,7 @@ class TaskSE3EqualityUnActuation : public TaskMotion {
   typedef pinocchio::SE3 SE3;
 
   TaskSE3EqualityUnActuation(const std::string& name, RobotWrapper& robot,
-                  const std::string& frameName);
+                  const std::string& frameName, bool use_direct_measurements);
 
   int dim() const override;
 
@@ -53,6 +53,8 @@ class TaskSE3EqualityUnActuation : public TaskMotion {
 
   void setReference(TrajectorySample& ref);
   void setReference(const SE3& ref);
+  void setMeasured(const SE3& p_measured, const Motion& v_measured);
+
   const TrajectorySample& getReference() const override;
 
   /** Return the desired task acceleration (after applying the specified mask).
@@ -128,12 +130,16 @@ class TaskSE3EqualityUnActuation : public TaskMotion {
   Vector m_drift_masked;
   Vector m_smc_term;
 
+  SE3 m_p_measured;
+  Motion m_v_measured;
+
   Matrix6x m_J;
   Matrix6x m_J_rotated;
   ConstraintEquality m_constraint;
   TrajectorySample m_ref;
   bool m_local_frame;
   bool m_use_smc;
+  bool m_use_direct_measurements;
 };
 
 }  // namespace tasks
