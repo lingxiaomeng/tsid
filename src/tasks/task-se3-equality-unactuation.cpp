@@ -214,6 +214,7 @@ namespace tsid
         m_robot.frameVelocity(data, m_frame_id, v_frame);
       }
       m_wMl.rotation(oMi.rotation());
+      m_robot.frameClassicAcceleration(data, m_frame_id, m_drift);
       m_robot.frameJacobianLocal(data, m_frame_id, m_J);
 
       if (!m_use_a_des_from_outside)
