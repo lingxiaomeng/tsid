@@ -94,6 +94,7 @@ class TaskSE3EqualityUnActuation : public TaskMotion {
   void setSmcGains(ConstRefVector m_smc_lambda, ConstRefVector m_smc_K, ConstRefVector m_smc_H, ConstRefVector m_smc_phi);
 
   void setAccelerationDesired(ConstRefVector a_desired);
+  void setDriftDesired(ConstRefVector a_desired);
 
   Vector computeSaturation(ConstRefVector s, ConstRefVector phi);
 
@@ -142,6 +143,7 @@ class TaskSE3EqualityUnActuation : public TaskMotion {
   bool m_use_smc;
   bool m_use_direct_measurements;
   bool m_use_a_des_from_outside;
+  bool m_use_m_drift_from_outside;
 };
 
 }  // namespace tasks

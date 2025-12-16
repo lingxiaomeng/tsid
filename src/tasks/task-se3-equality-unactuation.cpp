@@ -63,6 +63,7 @@ namespace tsid
       m_use_smc = false;
       m_use_direct_measurements = false;
       m_use_a_des_from_outside = false;
+      m_use_m_drift_from_outside = false;
       m_smc_lambda.setZero(6);
       m_smc_K.setZero(6);
       m_smc_H.setZero(6);
@@ -86,6 +87,13 @@ namespace tsid
                                      "The size of the desired acceleration vector needs to equal 6");
       m_use_a_des_from_outside = true;
       m_a_des = a_desired;
+    }
+    void TaskSE3EqualityUnActuation::setDriftDesired(ConstRefVector drift)
+    {
+      PINOCCHIO_CHECK_INPUT_ARGUMENT(drift.size() == 6,
+                                     "The size of the desired acceleration vector needs to equal 6");
+      m_use_m_drift_from_outside = true;
+      m_drift = drift;
     }
 
     void TaskSE3EqualityUnActuation::setMask(math::ConstRefVector mask)
@@ -214,7 +222,9 @@ namespace tsid
         m_robot.frameVelocity(data, m_frame_id, v_frame);
       }
       m_wMl.rotation(oMi.rotation());
-      m_robot.frameClassicAcceleration(data, m_frame_id, m_drift);
+      if(!m_use_m_drift_from_outside){
+        m_robot.frameClassicAcceleration(data, m_frame_id, m_drift);
+      }
       m_robot.frameJacobianLocal(data, m_frame_id, m_J);
 
       if (!m_use_a_des_from_outside)
