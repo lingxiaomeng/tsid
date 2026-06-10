@@ -38,19 +38,20 @@ InverseDynamicsFormulationAccForceOnShip::InverseDynamicsFormulationAccForceOnSh
   m_t = 0.0;
   m_v = robot.nv();
   m_u = robot.nv() - robot.na();
-  m_eq = m_u;
+  m_eq = 0;
   m_in = 0;
   m_hqpData.resize(2);
-  // m_hqpData[0].push_back(
-  //     solvers::make_pair<double, std::shared_ptr<ConstraintBase> >(
-  //         1.0, m_baseDynamics));
+  m_base_acc.setZero(m_u);
+  m_dv.setZero(m_v);
+  m_f.setZero(0);
+  m_tau.setZero(m_v - m_u);
 }
 
 Data &InverseDynamicsFormulationAccForceOnShip::data() { return m_data; }
 
 unsigned int InverseDynamicsFormulationAccForceOnShip::nVar() const
 {
-  return m_v;
+  return m_v - m_u;
 }
 
 unsigned int InverseDynamicsFormulationAccForceOnShip::nEq() const { return m_eq; }
@@ -63,7 +64,7 @@ void InverseDynamicsFormulationAccForceOnShip::resizeHqpData()
   {
     for (ConstraintLevel::iterator itt = it->begin(); itt != it->end(); itt++)
     {
-      itt->second->resize(itt->second->rows(), m_v);
+      itt->second->resize(itt->second->rows(), nVar());
     }
   }
 }
@@ -73,22 +74,24 @@ void InverseDynamicsFormulationAccForceOnShip::addTask(TaskLevelPointer tl,
                                                        double weight,
                                                        unsigned int priorityLevel)
 {
-  if (priorityLevel > m_hqpData.size())
-    m_hqpData.resize(priorityLevel);
+  if (priorityLevel >= m_hqpData.size())
+    m_hqpData.resize(priorityLevel + 1);
   const ConstraintBase &c = tl->task.getConstraint();
+  const unsigned int rows =
+      (c.isBound() && c.rows() == m_v) ? nVar() : c.rows();
   if (c.isEquality())
   {
     tl->constraint =
-        std::make_shared<ConstraintEquality>(c.name(), c.rows(), m_v);
+        std::make_shared<ConstraintEquality>(c.name(), rows, nVar());
     if (priorityLevel == 0)
-      m_eq += c.rows();
+      m_eq += rows;
   }
   else // if(c.isInequality())
   {
     tl->constraint =
-        std::make_shared<ConstraintInequality>(c.name(), c.rows(), m_v);
+        std::make_shared<ConstraintInequality>(c.name(), rows, nVar());
     if (priorityLevel == 0)
-      m_in += c.rows();
+      m_in += rows;
   }
   // don't use bounds for now because EiQuadProg doesn't exploit them anyway
   //  else
@@ -128,14 +131,14 @@ bool InverseDynamicsFormulationAccForceOnShip::addActuationTask(
   auto tl = std::make_shared<TaskLevel>(task, priorityLevel);
   m_taskActuations.push_back(tl);
 
-  if (priorityLevel > m_hqpData.size())
-    m_hqpData.resize(priorityLevel);
+  if (priorityLevel >= m_hqpData.size())
+    m_hqpData.resize(priorityLevel + 1);
 
   const ConstraintBase &c = tl->task.getConstraint();
   if (c.isEquality())
   {
     tl->constraint =
-        std::make_shared<ConstraintEquality>(c.name(), c.rows(), m_v);
+        std::make_shared<ConstraintEquality>(c.name(), c.rows(), nVar());
     if (priorityLevel == 0)
       m_eq += c.rows();
   }
@@ -143,7 +146,7 @@ bool InverseDynamicsFormulationAccForceOnShip::addActuationTask(
        // not in the problem variables
   {
     tl->constraint =
-        std::make_shared<ConstraintInequality>(c.name(), c.rows(), m_v);
+        std::make_shared<ConstraintInequality>(c.name(), c.rows(), nVar());
     if (priorityLevel == 0)
       m_in += c.rows();
   }
@@ -177,7 +180,8 @@ bool InverseDynamicsFormulationAccForceOnShip::updateTaskWeight(
 const HQPData &InverseDynamicsFormulationAccForceOnShip::computeProblemData(
     double time, ConstRefVector q, ConstRefVector v)
 {
-  return m_hqpData;
+  m_base_acc.setZero();
+  return computeProblemData(time, q, v, m_base_acc);
 }
 
 
@@ -185,14 +189,20 @@ const HQPData &InverseDynamicsFormulationAccForceOnShip::computeProblemData(
     double time, ConstRefVector q, ConstRefVector v, ConstRefVector base_a)
 {
   m_t = time;
+  PINOCCHIO_CHECK_INPUT_ARGUMENT(
+      base_a.size() == m_u,
+      "The size of the base acceleration vector needs to equal " +
+          std::to_string(m_u));
+  m_base_acc = base_a;
 
   m_robot.computeAllTerms(m_data, q, v);
 
-  const Matrix &M_a = m_robot.mass(m_data).bottomRows(m_v - m_u);
-  const Matrix &M_vq = m_robot.mass(m_data).bottomRows(m_v - m_u).leftCols(m_u);
-  Vector h_b = M_vq * base_a;
-  const Vector &h_a =
-      m_robot.nonLinearEffects(m_data).tail(m_v - m_u) + h_b;
+  const unsigned int na = nVar();
+  const Matrix &M_actuated = m_robot.mass(m_data).bottomRows(na);
+  const auto M_ab = M_actuated.leftCols(m_u);
+  const auto M_aa = M_actuated.rightCols(na);
+  const Vector h_a =
+      m_robot.nonLinearEffects(m_data).tail(na) + M_ab * m_base_acc;
 
   //  std::vector<TaskLevel*>::iterator it;
   //  for(it=m_taskMotions.begin(); it!=m_taskMotions.end(); it++)
@@ -201,20 +211,32 @@ const HQPData &InverseDynamicsFormulationAccForceOnShip::computeProblemData(
     const ConstraintBase &c = it->task.compute(time, q, v, m_data);
     if (c.isEquality())
     {
-      it->constraint->matrix().leftCols(m_v) = c.matrix();
-      it->constraint->vector() = c.vector();
+      const Vector base_term = c.matrix().leftCols(m_u) * m_base_acc;
+      it->constraint->matrix() = c.matrix().rightCols(na);
+      it->constraint->vector() = c.vector() - base_term;
     }
     else if (c.isInequality())
     {
-      it->constraint->matrix().leftCols(m_v) = c.matrix();
-      it->constraint->lowerBound() = c.lowerBound();
-      it->constraint->upperBound() = c.upperBound();
+      const Vector base_term = c.matrix().leftCols(m_u) * m_base_acc;
+      it->constraint->matrix() = c.matrix().rightCols(na);
+      it->constraint->lowerBound() = c.lowerBound() - base_term;
+      it->constraint->upperBound() = c.upperBound() - base_term;
     }
     else
     {
-      it->constraint->matrix().leftCols(m_v) = Matrix::Identity(m_v, m_v);
-      it->constraint->lowerBound() = c.lowerBound();
-      it->constraint->upperBound() = c.upperBound();
+      if (c.rows() == m_v && it->constraint->rows() == na)
+      {
+        it->constraint->matrix() = Matrix::Identity(na, na);
+        it->constraint->lowerBound() = c.lowerBound().tail(na);
+        it->constraint->upperBound() = c.upperBound().tail(na);
+      }
+      else
+      {
+        const Vector base_term = c.matrix().leftCols(m_u) * m_base_acc;
+        it->constraint->matrix() = c.matrix().rightCols(na);
+        it->constraint->lowerBound() = c.lowerBound() - base_term;
+        it->constraint->upperBound() = c.upperBound() - base_term;
+      }
     }
   }
 
@@ -223,14 +245,14 @@ const HQPData &InverseDynamicsFormulationAccForceOnShip::computeProblemData(
     const ConstraintBase &c = it->task.compute(time, q, v, m_data);
     if (c.isEquality())
     {
-      it->constraint->matrix().leftCols(m_v).noalias() = c.matrix() * M_a;
+      it->constraint->matrix().noalias() = c.matrix() * M_aa;
 
       it->constraint->vector() = c.vector();
       it->constraint->vector().noalias() -= c.matrix() * h_a;
     }
     else if (c.isInequality())
     {
-      it->constraint->matrix().leftCols(m_v).noalias() = c.matrix() * M_a;
+      it->constraint->matrix().noalias() = c.matrix() * M_aa;
 
       it->constraint->lowerBound() = c.lowerBound();
       it->constraint->lowerBound().noalias() -= c.matrix() * h_a;
@@ -240,7 +262,7 @@ const HQPData &InverseDynamicsFormulationAccForceOnShip::computeProblemData(
     else
     {
       // NB: An actuator bound becomes an inequality
-      it->constraint->matrix().leftCols(m_v) = M_a;
+      it->constraint->matrix() = M_aa;
       it->constraint->lowerBound() = c.lowerBound() - h_a;
       it->constraint->upperBound() = c.upperBound() - h_a;
     }
@@ -256,12 +278,16 @@ bool InverseDynamicsFormulationAccForceOnShip::decodeSolution(const HQPOutput &s
   if (m_solutionDecoded)
     return true;
 
-  const Matrix &M_a = m_robot.mass(m_data).bottomRows(m_v - m_u);
-  const Vector &h_a =
-      m_robot.nonLinearEffects(m_data).tail(m_v - m_u);
-  m_dv = sol.x.head(m_v);
+  const unsigned int na = nVar();
+  const Matrix &M_actuated = m_robot.mass(m_data).bottomRows(na);
+  const auto M_ab = M_actuated.leftCols(m_u);
+  const auto M_aa = M_actuated.rightCols(na);
+  const Vector h_a =
+      m_robot.nonLinearEffects(m_data).tail(na) + M_ab * m_base_acc;
+  m_dv.head(m_u) = m_base_acc;
+  m_dv.tail(na) = sol.x.head(na);
   m_tau = h_a;
-  m_tau.noalias() += M_a * m_dv;
+  m_tau.noalias() += M_aa * m_dv.tail(na);
   m_solutionDecoded = true;
   return true;
 }

@@ -119,6 +119,7 @@ namespace tsid
     unsigned int m_in; /// number of inequality constraints
 
     bool m_solutionDecoded;
+    Vector m_base_acc;
     Vector m_dv;
     Vector m_f;
     Vector m_tau;
