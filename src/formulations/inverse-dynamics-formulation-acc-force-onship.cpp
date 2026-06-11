@@ -19,6 +19,9 @@
 
 #include "tsid/math/constraint-bound.hpp"
 #include "tsid/math/constraint-inequality.hpp"
+#include "tsid/math/utils.hpp"
+#include "tsid/tasks/task-joint-posture.hpp"
+#include "tsid/tasks/task-se3-equality-unactuation.hpp"
 
 using namespace tsid;
 using namespace math;
@@ -33,7 +36,8 @@ InverseDynamicsFormulationAccForceOnShip::InverseDynamicsFormulationAccForceOnSh
     const std::string &name, RobotWrapper &robot, bool verbose)
     : InverseDynamicsFormulationBase(name, robot, verbose),
       m_data(robot.model()),
-      m_solutionDecoded(false)
+      m_solutionDecoded(false),
+      m_use_posture_nullspace_projector(true)
 {
   m_t = 0.0;
   m_v = robot.nv();
@@ -45,6 +49,12 @@ InverseDynamicsFormulationAccForceOnShip::InverseDynamicsFormulationAccForceOnSh
   m_dv.setZero(m_v);
   m_f.setZero(0);
   m_tau.setZero(m_v - m_u);
+  m_projector_jacobian_full.setZero(6, m_v);
+  m_projector_jacobian_rotated.setZero(6, m_v);
+  m_projector_jacobian_arm.setZero(6, m_v - m_u);
+  m_projector_jacobian_pinv.setZero(m_v - m_u, 6);
+  m_posture_projector.setIdentity(m_v - m_u, m_v - m_u);
+  m_projector_frame.setIdentity();
 }
 
 Data &InverseDynamicsFormulationAccForceOnShip::data() { return m_data; }
@@ -57,6 +67,64 @@ unsigned int InverseDynamicsFormulationAccForceOnShip::nVar() const
 unsigned int InverseDynamicsFormulationAccForceOnShip::nEq() const { return m_eq; }
 
 unsigned int InverseDynamicsFormulationAccForceOnShip::nIn() const { return m_in; }
+
+void InverseDynamicsFormulationAccForceOnShip::setPostureNullspaceProjectorEnabled(
+    bool enabled)
+{
+  m_use_posture_nullspace_projector = enabled;
+  if (enabled)
+    return;
+
+  for (auto &it : m_taskMotions)
+  {
+    auto *posture_task = dynamic_cast<tasks::TaskJointPosture *>(&it->task);
+    if (posture_task != nullptr)
+      posture_task->disableProjector();
+  }
+}
+
+void InverseDynamicsFormulationAccForceOnShip::updatePostureNullspaceProjector()
+{
+  if (!m_use_posture_nullspace_projector)
+    return;
+
+  tasks::TaskJointPosture *posture_task = nullptr;
+  tasks::TaskSE3EqualityUnActuation *ee_task = nullptr;
+
+  for (auto &it : m_taskMotions)
+  {
+    if (posture_task == nullptr)
+      posture_task = dynamic_cast<tasks::TaskJointPosture *>(&it->task);
+    if (ee_task == nullptr)
+      ee_task = dynamic_cast<tasks::TaskSE3EqualityUnActuation *>(&it->task);
+  }
+
+  if (posture_task == nullptr || ee_task == nullptr)
+    return;
+
+  const Vector &mask = ee_task->getMask();
+  m_robot.framePosition(m_data, ee_task->frame_id(), m_projector_frame);
+  m_projector_frame.translation().setZero();
+  m_robot.frameJacobianLocal(m_data, ee_task->frame_id(), m_projector_jacobian_full);
+  m_projector_jacobian_rotated.noalias() =
+      m_projector_frame.toActionMatrix() * m_projector_jacobian_full;
+  m_projector_jacobian_rotated.leftCols(m_u).setZero();
+  m_projector_jacobian_arm = m_projector_jacobian_rotated.rightCols(m_v - m_u);
+
+  for (int i = 0; i < 6; ++i)
+  {
+    if (mask(i) != 1.0)
+      m_projector_jacobian_arm.row(i).setZero();
+  }
+
+  math::pseudoInverse(m_projector_jacobian_arm, m_projector_svd,
+                      m_projector_jacobian_pinv, 1e-6,
+                      Eigen::ComputeThinU | Eigen::ComputeThinV);
+  m_posture_projector.setIdentity();
+  m_posture_projector.noalias() -=
+      m_projector_jacobian_pinv * m_projector_jacobian_arm;
+  posture_task->setProjector(m_posture_projector);
+}
 
 void InverseDynamicsFormulationAccForceOnShip::resizeHqpData()
 {
@@ -196,6 +264,7 @@ const HQPData &InverseDynamicsFormulationAccForceOnShip::computeProblemData(
   m_base_acc = base_a;
 
   m_robot.computeAllTerms(m_data, q, v);
+  updatePostureNullspaceProjector();
 
   const unsigned int na = nVar();
   const Matrix &M_actuated = m_robot.mass(m_data).bottomRows(na);

@@ -33,6 +33,7 @@ class TaskJointPosture : public TaskMotion {
   typedef math::Index Index;
   typedef trajectories::TrajectorySample TrajectorySample;
   typedef math::Vector Vector;
+  typedef math::Matrix Matrix;
   typedef math::VectorXi VectorXi;
   typedef math::ConstraintEquality ConstraintEquality;
   typedef pinocchio::Data Data;
@@ -55,6 +56,8 @@ class TaskJointPosture : public TaskMotion {
   TSID_DEPRECATED const Vector& mask() const;     // deprecated
   TSID_DEPRECATED void mask(const Vector& mask);  // deprecated
   void setMask(math::ConstRefVector mask) override;
+  void setProjector(math::ConstRefMatrix projector);
+  void disableProjector();
 
   const Vector& position_error() const override;
   const Vector& velocity_error() const override;
@@ -77,6 +80,9 @@ class TaskJointPosture : public TaskMotion {
   VectorXi m_activeAxes;
   TrajectorySample m_ref;
   Vector m_ref_q_augmented;
+  bool m_use_projector;
+  Matrix m_projector;
+  Vector m_projected_a_des;
   ConstraintEquality m_constraint;
 };
 

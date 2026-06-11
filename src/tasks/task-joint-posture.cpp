@@ -28,10 +28,13 @@ using namespace pinocchio;
 TaskJointPosture::TaskJointPosture(const std::string& name, RobotWrapper& robot)
     : TaskMotion(name, robot),
       m_ref(robot.nq_actuated(), robot.na()),
+      m_use_projector(false),
       m_constraint(name, robot.na(), robot.nv()) {
   m_ref_q_augmented = pinocchio::neutral(robot.model());
   m_Kp.setZero(robot.na());
   m_Kd.setZero(robot.na());
+  m_projector.setIdentity(robot.na(), robot.na());
+  m_projected_a_des.setZero(robot.na());
   Vector m = Vector::Ones(robot.na());
   setMask(m);
 }
@@ -62,11 +65,36 @@ void TaskJointPosture::setMask(ConstRefVector m) {
       m_activeAxes(j) = i;
       j++;
     }
-  m_constraint.resize((unsigned int)dim, m_robot.nv());
-  m_constraint.setMatrix(S);
+  if (m_use_projector) {
+    setProjector(m_projector);
+  } else {
+    m_constraint.resize((unsigned int)dim, m_robot.nv());
+    m_constraint.setMatrix(S);
+  }
 }
 
-int TaskJointPosture::dim() const { return (int)m_mask.sum(); }
+void TaskJointPosture::setProjector(ConstRefMatrix projector) {
+  PINOCCHIO_CHECK_INPUT_ARGUMENT(
+      projector.rows() == m_robot.na() && projector.cols() == m_robot.na(),
+      "The posture projector needs to be " + std::to_string(m_robot.na()) +
+          " x " + std::to_string(m_robot.na()));
+
+  m_use_projector = true;
+  m_projector = projector;
+  m_constraint.resize(m_robot.na(), m_robot.nv());
+  m_constraint.matrix().setZero();
+  m_constraint.matrix().rightCols(m_robot.na()) = m_projector;
+  m_projected_a_des.setZero(m_robot.na());
+}
+
+void TaskJointPosture::disableProjector() {
+  m_use_projector = false;
+  setMask(m_mask);
+}
+
+int TaskJointPosture::dim() const {
+  return m_use_projector ? (int)m_robot.na() : (int)m_mask.sum();
+}
 
 const Vector& TaskJointPosture::Kp() { return m_Kp; }
 
@@ -146,8 +174,13 @@ const ConstraintBase& TaskJointPosture::compute(const double, ConstRefVector q,
   m_a_des = -m_Kp.cwiseProduct(m_p_error) - m_Kd.cwiseProduct(m_v_error) +
             m_ref.getSecondDerivative();
 
-  for (unsigned int i = 0; i < m_activeAxes.size(); i++)
-    m_constraint.vector()(i) = m_a_des(m_activeAxes(i));
+  if (m_use_projector) {
+    m_projected_a_des.noalias() = m_projector * m_a_des;
+    m_constraint.vector() = m_projected_a_des;
+  } else {
+    for (unsigned int i = 0; i < m_activeAxes.size(); i++)
+      m_constraint.vector()(i) = m_a_des(m_activeAxes(i));
+  }
   return m_constraint;
 }
 

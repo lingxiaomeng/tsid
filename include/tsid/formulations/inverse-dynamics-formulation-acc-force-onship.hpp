@@ -102,6 +102,8 @@ namespace tsid
                  unsigned int priorityLevel);
 
     void resizeHqpData();
+    void setPostureNullspaceProjectorEnabled(bool enabled);
+    void updatePostureNullspaceProjector();
 
     bool removeFromHqpData(const std::string &name);
 
@@ -123,6 +125,14 @@ namespace tsid
     Vector m_dv;
     Vector m_f;
     Vector m_tau;
+    bool m_use_posture_nullspace_projector;
+    Data::Matrix6x m_projector_jacobian_full;
+    Data::Matrix6x m_projector_jacobian_rotated;
+    Matrix m_projector_jacobian_arm;
+    Matrix m_projector_jacobian_pinv;
+    Matrix m_posture_projector;
+    pinocchio::SE3 m_projector_frame;
+    Eigen::JacobiSVD<Matrix> m_projector_svd;
   };
 } // namespace tsid
 #endif // ifndef __invdyn_inverse_dynamics_formulation_acc_force_hpp__
