@@ -131,6 +131,9 @@ namespace tsid
     Matrix m_projector_jacobian_arm;
     Matrix m_projector_jacobian_pinv;
     Matrix m_posture_projector;
+    Vector m_projector_task_rhs;
+    Vector m_projector_task_acc;
+    Vector m_base_reaction_reference;
     pinocchio::SE3 m_projector_frame;
     Eigen::JacobiSVD<Matrix> m_projector_svd;
   };

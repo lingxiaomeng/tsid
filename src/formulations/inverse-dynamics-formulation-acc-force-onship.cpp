@@ -20,6 +20,7 @@
 #include "tsid/math/constraint-bound.hpp"
 #include "tsid/math/constraint-inequality.hpp"
 #include "tsid/math/utils.hpp"
+#include "tsid/tasks/task-base-reaction.hpp"
 #include "tsid/tasks/task-joint-posture.hpp"
 #include "tsid/tasks/task-se3-equality-unactuation.hpp"
 
@@ -54,6 +55,9 @@ InverseDynamicsFormulationAccForceOnShip::InverseDynamicsFormulationAccForceOnSh
   m_projector_jacobian_arm.setZero(6, m_v - m_u);
   m_projector_jacobian_pinv.setZero(m_v - m_u, 6);
   m_posture_projector.setIdentity(m_v - m_u, m_v - m_u);
+  m_projector_task_rhs.setZero(6);
+  m_projector_task_acc.setZero(m_v - m_u);
+  m_base_reaction_reference.setZero(m_u);
   m_projector_frame.setIdentity();
 }
 
@@ -80,6 +84,9 @@ void InverseDynamicsFormulationAccForceOnShip::setPostureNullspaceProjectorEnabl
     auto *posture_task = dynamic_cast<tasks::TaskJointPosture *>(&it->task);
     if (posture_task != nullptr)
       posture_task->disableProjector();
+    auto *base_reaction_task = dynamic_cast<tasks::TaskBaseReaction *>(&it->task);
+    if (base_reaction_task != nullptr)
+      base_reaction_task->disableProjector();
   }
 }
 
@@ -89,17 +96,20 @@ void InverseDynamicsFormulationAccForceOnShip::updatePostureNullspaceProjector()
     return;
 
   tasks::TaskJointPosture *posture_task = nullptr;
+  tasks::TaskBaseReaction *base_reaction_task = nullptr;
   tasks::TaskSE3EqualityUnActuation *ee_task = nullptr;
 
   for (auto &it : m_taskMotions)
   {
     if (posture_task == nullptr)
       posture_task = dynamic_cast<tasks::TaskJointPosture *>(&it->task);
+    if (base_reaction_task == nullptr)
+      base_reaction_task = dynamic_cast<tasks::TaskBaseReaction *>(&it->task);
     if (ee_task == nullptr)
       ee_task = dynamic_cast<tasks::TaskSE3EqualityUnActuation *>(&it->task);
   }
 
-  if (posture_task == nullptr || ee_task == nullptr)
+  if ((posture_task == nullptr && base_reaction_task == nullptr) || ee_task == nullptr)
     return;
 
   const Vector &mask = ee_task->getMask();
@@ -123,7 +133,10 @@ void InverseDynamicsFormulationAccForceOnShip::updatePostureNullspaceProjector()
   m_posture_projector.setIdentity();
   m_posture_projector.noalias() -=
       m_projector_jacobian_pinv * m_projector_jacobian_arm;
-  posture_task->setProjector(m_posture_projector);
+  if (posture_task != nullptr)
+    posture_task->setProjector(m_posture_projector);
+  if (base_reaction_task != nullptr)
+    base_reaction_task->setProjector(m_posture_projector);
 }
 
 void InverseDynamicsFormulationAccForceOnShip::resizeHqpData()
@@ -268,16 +281,43 @@ const HQPData &InverseDynamicsFormulationAccForceOnShip::computeProblemData(
 
   const unsigned int na = nVar();
   const Matrix &M_actuated = m_robot.mass(m_data).bottomRows(na);
+  const Matrix &M = m_robot.mass(m_data);
   const auto M_ab = M_actuated.leftCols(m_u);
   const auto M_aa = M_actuated.rightCols(na);
   const Vector h_a =
       m_robot.nonLinearEffects(m_data).tail(na) + M_ab * m_base_acc;
+  tasks::TaskBaseReaction *base_reaction_task = nullptr;
+  for (auto &task_level : m_taskMotions)
+  {
+    base_reaction_task = dynamic_cast<tasks::TaskBaseReaction *>(&task_level->task);
+    if (base_reaction_task != nullptr)
+      break;
+  }
 
   //  std::vector<TaskLevel*>::iterator it;
   //  for(it=m_taskMotions.begin(); it!=m_taskMotions.end(); it++)
   for (auto &it : m_taskMotions)
   {
     const ConstraintBase &c = it->task.compute(time, q, v, m_data);
+    auto *ee_task = dynamic_cast<tasks::TaskSE3EqualityUnActuation *>(&it->task);
+    if (m_use_posture_nullspace_projector && base_reaction_task != nullptr && ee_task != nullptr)
+    {
+      m_projector_task_rhs.setZero();
+      const Vector &mask = ee_task->getMask();
+      unsigned int idx = 0;
+      for (int i = 0; i < 6; ++i)
+      {
+        if (mask(i) != 1.0)
+          continue;
+        m_projector_task_rhs(i) =
+            c.vector()(idx) - c.matrix().row(idx).leftCols(m_u).dot(m_base_acc);
+        idx++;
+      }
+      m_projector_task_acc.noalias() = m_projector_jacobian_pinv * m_projector_task_rhs;
+      m_base_reaction_reference.noalias() =
+          -M.topRows(m_u).rightCols(na) * m_projector_task_acc;
+      base_reaction_task->setReference(m_base_reaction_reference);
+    }
     if (c.isEquality())
     {
       const Vector base_term = c.matrix().leftCols(m_u) * m_base_acc;

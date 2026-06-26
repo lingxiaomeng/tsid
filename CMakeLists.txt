@@ -148,6 +148,7 @@ set(${PROJECT_NAME}_MATH_HEADERS
 set(${PROJECT_NAME}_TASKS_HEADERS
     include/tsid/tasks/fwd.hpp
     include/tsid/tasks/task-base.hpp
+    include/tsid/tasks/task-base-reaction.hpp
     include/tsid/tasks/task-motion.hpp
     include/tsid/tasks/task-actuation.hpp
     include/tsid/tasks/task-contact-force.hpp
@@ -257,6 +258,7 @@ set(${PROJECT_NAME}_MATH_SOURCES
 
 set(${PROJECT_NAME}_TASKS_SOURCES
     src/tasks/task-base.cpp
+    src/tasks/task-base-reaction.cpp
     src/tasks/task-actuation-bounds.cpp
     src/tasks/task-actuation-equality.cpp
     src/tasks/task-actuation.cpp
