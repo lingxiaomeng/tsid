@@ -85,13 +85,10 @@ const ConstraintBase& TaskBaseReaction::getConstraint() const {
 const ConstraintBase& TaskBaseReaction::compute(const double, ConstRefVector,
                                                 ConstRefVector, Data& data) {
   const Matrix& M = m_robot.mass(data);
-  const Vector& h = m_robot.nonLinearEffects(data);
 
   m_constraint.matrix().setZero();
   for (unsigned int i = 0; i < m_activeAxes.size(); i++) {
     const unsigned int axis = m_activeAxes(i);
-    m_constraint.matrix().row(i).leftCols(m_base_dim) =
-        M.row(axis).leftCols(m_base_dim);
 
     if (m_use_projector) {
       m_projected_row.noalias() =
@@ -102,7 +99,7 @@ const ConstraintBase& TaskBaseReaction::compute(const double, ConstRefVector,
       m_constraint.matrix().row(i).segment(m_base_dim, m_arm_dim) =
           M.row(axis).segment(m_base_dim, m_arm_dim);
     }
-    m_constraint.vector()(i) = m_reference(axis) - h(axis);
+    m_constraint.vector()(i) = m_reference(axis);
   }
   return m_constraint;
 }
