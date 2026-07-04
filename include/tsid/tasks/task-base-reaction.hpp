@@ -20,6 +20,7 @@
 
 #include <tsid/tasks/task-motion.hpp>
 #include <tsid/math/constraint-equality.hpp>
+#include <tsid/trajectories/trajectory-base.hpp>
 
 namespace tsid {
 namespace tasks {
@@ -32,6 +33,7 @@ class TaskBaseReaction : public TaskMotion {
   typedef math::Matrix Matrix;
   typedef math::VectorXi VectorXi;
   typedef math::ConstraintEquality ConstraintEquality;
+  typedef trajectories::TrajectorySample TrajectorySample;
   typedef pinocchio::Data Data;
 
   TaskBaseReaction(const std::string& name, RobotWrapper& robot);
@@ -44,15 +46,33 @@ class TaskBaseReaction : public TaskMotion {
   const ConstraintBase& getConstraint() const override;
 
   void setReference(math::ConstRefVector reference);
+  void setPostureReference(const TrajectorySample& ref);
+  const TrajectorySample& getReference() const override;
+  const Vector& getDesiredAcceleration() const override;
+
   void setMask(math::ConstRefVector mask) override;
   void setProjector(math::ConstRefMatrix projector);
   void disableProjector();
+
+  const Vector& Kp();
+  const Vector& Kd();
+  void Kp(ConstRefVector Kp);
+  void Kd(ConstRefVector Kd);
 
  protected:
   unsigned int m_base_dim;
   unsigned int m_arm_dim;
   VectorXi m_activeAxes;
   Vector m_reference;
+  Vector m_Kp;
+  Vector m_Kd;
+  Vector m_p_error;
+  Vector m_v_error;
+  Vector m_p;
+  Vector m_v;
+  Vector m_a_des;
+  Vector m_ref_q_augmented;
+  TrajectorySample m_posture_ref;
   bool m_use_projector;
   Matrix m_projector;
   Matrix m_projected_row;
