@@ -133,6 +133,7 @@ void InverseDynamicsFormulationAccForceOnShip::updatePostureNullspaceProjector()
   m_posture_projector.setIdentity();
   m_posture_projector.noalias() -=
       m_projector_jacobian_pinv * m_projector_jacobian_arm;
+  // Both secondary objectives use the same instantaneous EE nullspace.
   if (posture_task != nullptr)
     posture_task->setProjector(m_posture_projector);
   if (base_reaction_task != nullptr)
@@ -281,43 +282,21 @@ const HQPData &InverseDynamicsFormulationAccForceOnShip::computeProblemData(
 
   const unsigned int na = nVar();
   const Matrix &M_actuated = m_robot.mass(m_data).bottomRows(na);
-  const Matrix &M = m_robot.mass(m_data);
   const auto M_ab = M_actuated.leftCols(m_u);
   const auto M_aa = M_actuated.rightCols(na);
   const Vector h_a =
       m_robot.nonLinearEffects(m_data).tail(na) + M_ab * m_base_acc;
-  tasks::TaskBaseReaction *base_reaction_task = nullptr;
   for (auto &task_level : m_taskMotions)
   {
-    base_reaction_task = dynamic_cast<tasks::TaskBaseReaction *>(&task_level->task);
+    auto *base_reaction_task =
+        dynamic_cast<tasks::TaskBaseReaction *>(&task_level->task);
     if (base_reaction_task != nullptr)
-      break;
+      base_reaction_task->setBaseAcceleration(m_base_acc);
   }
 
-  //  std::vector<TaskLevel*>::iterator it;
-  //  for(it=m_taskMotions.begin(); it!=m_taskMotions.end(); it++)
   for (auto &it : m_taskMotions)
   {
     const ConstraintBase &c = it->task.compute(time, q, v, m_data);
-    auto *ee_task = dynamic_cast<tasks::TaskSE3EqualityUnActuation *>(&it->task);
-    if (m_use_posture_nullspace_projector && base_reaction_task != nullptr && ee_task != nullptr)
-    {
-      m_projector_task_rhs.setZero();
-      const Vector &mask = ee_task->getMask();
-      unsigned int idx = 0;
-      for (int i = 0; i < 6; ++i)
-      {
-        if (mask(i) != 1.0)
-          continue;
-        m_projector_task_rhs(i) =
-            c.vector()(idx) - c.matrix().row(idx).leftCols(m_u).dot(m_base_acc);
-        idx++;
-      }
-      m_projector_task_acc.noalias() = m_projector_jacobian_pinv * m_projector_task_rhs;
-      m_base_reaction_reference.noalias() =
-          -M.topRows(m_u).rightCols(na) * m_projector_task_acc;
-      base_reaction_task->setReference(m_base_reaction_reference);
-    }
     if (c.isEquality())
     {
       const Vector base_term = c.matrix().leftCols(m_u) * m_base_acc;
