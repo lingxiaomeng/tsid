@@ -55,30 +55,13 @@ namespace tsid
       m_a_des.setZero(6);
       m_J.setZero(6, robot.nv());
       m_J_rotated.setZero(6, robot.nv());
-      m_smc_term.setZero(6);
       m_mask.resize(6);
       m_mask.fill(1.);
       setMask(m_mask);
 
-      m_use_smc = false;
       m_use_direct_measurements = false;
       m_use_a_des_from_outside = false;
       m_use_m_drift_from_outside = false;
-      m_smc_lambda.setZero(6);
-      m_smc_K.setZero(6);
-      m_smc_H.setZero(6);
-      m_smc_phi.setZero(6);
-    }
-
-    void TaskSE3EqualityUnActuation::setSmcGains(ConstRefVector m_smc_lambda, ConstRefVector m_smc_K, ConstRefVector m_smc_H, ConstRefVector m_smc_phi)
-    {
-      PINOCCHIO_CHECK_INPUT_ARGUMENT(m_smc_K.size() == 6,
-                                     "The size of the K vector needs to equal 6");
-
-      this->m_smc_lambda = m_smc_lambda;
-      this->m_smc_K = m_smc_K;
-      this->m_smc_H = m_smc_H;
-      this->m_smc_phi = m_smc_phi;
     }
 
     void TaskSE3EqualityUnActuation::setAccelerationDesired(ConstRefVector a_desired)
@@ -188,14 +171,6 @@ namespace tsid
       return m_constraint;
     }
 
-    Vector TaskSE3EqualityUnActuation::computeSaturation(ConstRefVector s, ConstRefVector phi)
-    {
-      // Computes sat(s / phi) component-wise
-      // Assumes phi(i) > 0
-      Eigen::VectorXd s_over_phi = s.cwiseQuotient(phi);
-      return s_over_phi.cwiseMin(1.0).cwiseMax(-1.0);
-    }
-
     void TaskSE3EqualityUnActuation::setMeasured(const SE3 &p_measured, const Motion &v_measured)
     {
       m_use_direct_measurements = true;
@@ -238,13 +213,9 @@ namespace tsid
             m_p_error.toVector();
         m_v_error =
             m_v_ref - m_wMl.act(v_frame);                   // vel err in local world-oriented frame
-        Eigen::VectorXd v_error_vec = m_v_error.toVector(); // This is -e_dot
-        Eigen::VectorXd s = v_error_vec + m_smc_lambda.cwiseProduct(m_p_error_vec);
-        Eigen::VectorXd sat_s = computeSaturation(s, m_smc_phi);
-        m_smc_term = m_smc_lambda.cwiseProduct(v_error_vec) + m_smc_K.cwiseProduct(s) + m_smc_H.cwiseProduct(sat_s);
         // desired acc in local world-oriented frame
         m_a_des = m_Kp.cwiseProduct(m_p_error_vec) +
-                  m_Kd.cwiseProduct(m_v_error.toVector()) + m_a_ref.toVector() + m_smc_term;
+                  m_Kd.cwiseProduct(m_v_error.toVector()) + m_a_ref.toVector();
       }
       // Transformation from local to world
 

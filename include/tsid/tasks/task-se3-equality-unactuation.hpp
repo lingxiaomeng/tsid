@@ -91,12 +91,8 @@ class TaskSE3EqualityUnActuation : public TaskMotion {
   const Vector& Kd() const;
   void Kp(ConstRefVector Kp);
   void Kd(ConstRefVector Kp);
-  void setSmcGains(ConstRefVector m_smc_lambda, ConstRefVector m_smc_K, ConstRefVector m_smc_H, ConstRefVector m_smc_phi);
-
   void setAccelerationDesired(ConstRefVector a_desired);
   void setDriftDesired(ConstRefVector a_desired);
-
-  Vector computeSaturation(ConstRefVector s, ConstRefVector phi);
 
 
   Index frame_id() const;
@@ -122,15 +118,9 @@ class TaskSE3EqualityUnActuation : public TaskMotion {
   SE3 m_M_ref, m_wMl;
   Vector m_Kp;
   Vector m_Kd;
-  Vector m_smc_lambda;
-  Vector m_smc_K;
-  Vector m_smc_H;
-  Vector m_smc_phi;
-
   Vector m_a_des, m_a_des_masked;
   Motion m_drift;
   Vector m_drift_masked;
-  Vector m_smc_term;
 
   SE3 m_p_measured;
   Motion m_v_measured;
@@ -140,7 +130,6 @@ class TaskSE3EqualityUnActuation : public TaskMotion {
   ConstraintEquality m_constraint;
   TrajectorySample m_ref;
 
-  bool m_use_smc;
   bool m_use_direct_measurements;
   bool m_use_a_des_from_outside;
   bool m_use_m_drift_from_outside;
