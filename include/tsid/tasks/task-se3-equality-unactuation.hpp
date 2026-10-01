@@ -18,6 +18,8 @@
 #ifndef __invdyn_task_se3_equality_unactuation_hpp__
 #define __invdyn_task_se3_equality_unactuation_hpp__
 
+#include <pinocchio/fwd.hpp>
+
 #include "tsid/tasks/task-motion.hpp"
 #include "tsid/trajectories/trajectory-base.hpp"
 #include "tsid/math/constraint-equality.hpp"
@@ -54,31 +56,38 @@ class TaskSE3EqualityUnActuation : public TaskMotion {
   void setReference(const SE3& ref);
   void setMeasured(const SE3& p_measured, const Motion& v_measured);
 
+  /** Use e = [p_d-p, log(R^T R_d)] and its exact differential to form
+   *  the PD command, including dot(G_r). Requires ||log(R^T R_d)|| < pi.
+   *  Reference/measured twists and classical reference accelerations are
+   *  world-oriented at the end-effector origin. Gains act in error coordinates.
+   *  Disabled by default. setAccelerationDesired() overrides either PD mode.
+   */
+  void useGeometricError(bool enabled);
+
   const TrajectorySample& getReference() const override;
 
   /** Return the desired task acceleration (after applying the specified mask).
-   *  The value is expressed in local frame is the local_frame flag is true,
-   *  otherwise it is expressed in a local world-oriented frame.
+   *  The classical acceleration is expressed in a local world-oriented frame.
    */
   const Vector& getDesiredAcceleration() const override;
 
   /** Return the task acceleration (after applying the specified mask).
-   *  The value is expressed in local frame is the local_frame flag is true,
-   *  otherwise it is expressed in a local world-oriented frame.
+   *  The classical acceleration is expressed in a local world-oriented frame.
    */
   Vector getAcceleration(ConstRefVector dv) const override;
 
   virtual void setMask(math::ConstRefVector mask) override;
 
   /** Return the position tracking error (after applying the specified mask).
-   *  The error is expressed in local frame is the local_frame flag is true,
-   *  otherwise it is expressed in a local world-oriented frame.
+   *  Geometric mode returns [p_d-p, log(R^T R_d)]; original mode rotates
+   *  the orientation error into the world frame.
    */
   const Vector& position_error() const override;
 
   /** Return the velocity tracking error (after applying the specified mask).
-   *  The error is expressed in local frame is the local_frame flag is true,
-   *  otherwise it is expressed in a local world-oriented frame.
+   *  Geometric mode returns dot(e); original mode returns the world-oriented
+   *  twist difference. Internal PD diagnostics are bypassed by an external
+   *  acceleration command.
    */
   const Vector& velocity_error() const override;
 
@@ -133,6 +142,7 @@ class TaskSE3EqualityUnActuation : public TaskMotion {
   bool m_use_direct_measurements;
   bool m_use_a_des_from_outside;
   bool m_use_m_drift_from_outside;
+  bool m_use_geometric_error;
 };
 
 }  // namespace tasks

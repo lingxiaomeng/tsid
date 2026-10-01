@@ -15,6 +15,10 @@
 // <http://www.gnu.org/licenses/>.
 //
 
+#include <pinocchio/fwd.hpp>
+
+#include <Eigen/LU>
+#include <pinocchio/spatial/explog.hpp>
 #include "tsid/math/utils.hpp"
 #include "tsid/tasks/task-se3-equality-unactuation.hpp"
 #include "tsid/robots/robot-wrapper.hpp"
@@ -62,6 +66,12 @@ namespace tsid
       m_use_direct_measurements = false;
       m_use_a_des_from_outside = false;
       m_use_m_drift_from_outside = false;
+      m_use_geometric_error = false;
+    }
+
+    void TaskSE3EqualityUnActuation::useGeometricError(bool enabled)
+    {
+      m_use_geometric_error = enabled;
     }
 
     void TaskSE3EqualityUnActuation::setAccelerationDesired(ConstRefVector a_desired)
@@ -204,18 +214,59 @@ namespace tsid
 
       if (!m_use_a_des_from_outside)
       {
-        errorInSE3(oMi, m_M_ref, m_p_error); // pos err in local frame
         SE3ToVector(m_M_ref, m_p_ref);
         SE3ToVector(oMi, m_p);
+        m_v_error = m_v_ref - m_wMl.act(v_frame); // world-oriented velocity difference
 
-        m_p_error_vec =
-            m_wMl.toActionMatrix() * // pos err in local world-oriented frame
-            m_p_error.toVector();
-        m_v_error =
-            m_v_ref - m_wMl.act(v_frame);                   // vel err in local world-oriented frame
-        // desired acc in local world-oriented frame
-        m_a_des = m_Kp.cwiseProduct(m_p_error_vec) +
-                  m_Kd.cwiseProduct(m_v_error.toVector()) + m_a_ref.toVector();
+        if (m_use_geometric_error)
+        {
+          // Split R^3 x SO(3) error. The log chart must satisfy ||e_r|| < pi.
+          const Eigen::Matrix3d R_error = oMi.rotation().transpose() * m_M_ref.rotation();
+          const Eigen::Vector3d e_r = log3(R_error);
+          Eigen::Matrix3d Jr_inv;
+          pinocchio::Jlog3(R_error, Jr_inv);
+          const Eigen::Matrix3d Rd_transpose = m_M_ref.rotation().transpose();
+          const Eigen::Matrix3d G_r = Jr_inv * Rd_transpose;
+          const Eigen::Vector3d delta_omega = m_v_error.angular();
+          const Eigen::Vector3d e_r_dot = G_r * delta_omega;
+          // R_error_dot = R_error * skew(omega_error), so Hlog3 gives d(Jr_inv)/dt.
+          const Eigen::Vector3d omega_error = Rd_transpose * delta_omega;
+          Eigen::Matrix3d Jr_inv_dot;
+          // Hlog3 divides by theta and 1-cos(theta). Use its regular limit
+          // near zero: d(Jr_inv)/dt = E_dot/2 + (E_dot*E + E*E_dot)/12 + O(theta^3).
+          constexpr double hlog_zero_neighborhood_squared = 1e-6; // (1e-3 rad)^2
+          if (e_r.squaredNorm() < hlog_zero_neighborhood_squared)
+          {
+            const Eigen::Matrix3d E = skew(e_r);
+            const Eigen::Matrix3d E_dot = skew(e_r_dot);
+            Jr_inv_dot = 0.5 * E_dot + (E_dot * E + E * E_dot) / 12.0;
+          }
+          else
+          {
+            pinocchio::Hlog3(R_error, omega_error, Jr_inv_dot);
+          }
+          // d(R_d^T)/dt = -R_d^T [omega_d]_x, with omega_d expressed in W.
+          const Eigen::Matrix3d G_r_dot = Jr_inv_dot * Rd_transpose -
+              G_r * skew(m_v_ref.angular());
+
+          m_p_error_vec.head<3>() = m_M_ref.translation() - oMi.translation();
+          m_p_error_vec.tail<3>() = e_r;
+          m_v_error.angular() = e_r_dot;
+          m_a_des.head<3>() = m_a_ref.linear() +
+              m_Kp.head<3>().cwiseProduct(m_p_error_vec.head<3>()) +
+              m_Kd.head<3>().cwiseProduct(m_v_error.linear());
+          const Eigen::Vector3d angular_feedback = m_Kp.tail<3>().cwiseProduct(e_r) +
+              m_Kd.tail<3>().cwiseProduct(e_r_dot) + G_r_dot * delta_omega;
+          m_a_des.tail<3>() = m_a_ref.angular() + G_r.partialPivLu().solve(angular_feedback);
+        }
+        else
+        {
+          errorInSE3(oMi, m_M_ref, m_p_error); // pos err in local frame
+          m_p_error_vec = m_wMl.toActionMatrix() * m_p_error.toVector();
+          // Original PD command in the local world-oriented frame.
+          m_a_des = m_Kp.cwiseProduct(m_p_error_vec) +
+                    m_Kd.cwiseProduct(m_v_error.toVector()) + m_a_ref.toVector();
+        }
       }
       // Transformation from local to world
 
