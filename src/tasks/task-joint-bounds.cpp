@@ -15,6 +15,8 @@
 // <http://www.gnu.org/licenses/>.
 //
 
+#include <pinocchio/fwd.hpp>
+
 #include <tsid/tasks/task-joint-bounds.hpp>
 #include "tsid/robots/robot-wrapper.hpp"
 
@@ -37,7 +39,7 @@ TaskJointBounds::TaskJointBounds(const std::string& name, RobotWrapper& robot,
   m_a_lb = -1e10 * Vector::Ones(m_na);
   m_a_ub = +1e10 * Vector::Ones(m_na);
   m_ddq_max_due_to_vel.setZero(m_na);
-  m_ddq_max_due_to_vel.setZero(m_na);
+  m_ddq_min_due_to_vel.setZero(m_na);
 
   int offset = m_nv - m_na;
   for (int i = 0; i < offset; i++) {
@@ -47,6 +49,10 @@ TaskJointBounds::TaskJointBounds(const std::string& name, RobotWrapper& robot,
 }
 
 int TaskJointBounds::dim() const { return m_nv; }
+
+const Vector& TaskJointBounds::getPositionLowerBounds() const { return m_q_lb; }
+
+const Vector& TaskJointBounds::getPositionUpperBounds() const { return m_q_ub; }
 
 const Vector& TaskJointBounds::getAccelerationLowerBounds() const {
   return m_a_lb;
@@ -63,6 +69,23 @@ const Vector& TaskJointBounds::getVelocityUpperBounds() const { return m_v_ub; }
 void TaskJointBounds::setTimeStep(double dt) {
   PINOCCHIO_CHECK_INPUT_ARGUMENT(dt > 0.0, "dt needs to be positive");
   m_dt = dt;
+}
+
+void TaskJointBounds::setPositionBounds(ConstRefVector lower,
+                                       ConstRefVector upper) {
+  PINOCCHIO_CHECK_INPUT_ARGUMENT(
+      m_robot.nq_actuated() == m_na,
+      "Position bounds require Euclidean actuated joint coordinates");
+  PINOCCHIO_CHECK_INPUT_ARGUMENT(
+      lower.size() == m_na && upper.size() == m_na,
+      "The position bounds vectors need to have size " + std::to_string(m_na));
+  PINOCCHIO_CHECK_INPUT_ARGUMENT(
+      lower.allFinite() && upper.allFinite() &&
+          (lower.array() <= upper.array()).all(),
+      "Position bounds must be finite and ordered");
+  m_q_lb = lower;
+  m_q_ub = upper;
+  m_impose_position_bounds = true;
 }
 
 void TaskJointBounds::setVelocityBounds(ConstRefVector lower,
@@ -99,13 +122,13 @@ const ConstraintBase& TaskJointBounds::getConstraint() const {
 
 void TaskJointBounds::setMask(ConstRefVector mask) { m_mask = mask; }
 
-const ConstraintBase& TaskJointBounds::compute(const double, ConstRefVector,
+const ConstraintBase& TaskJointBounds::compute(const double, ConstRefVector q,
                                                ConstRefVector v, Data&) {
   // compute min/max joint acc imposed by velocity limits
   m_ddq_max_due_to_vel = (m_v_ub - v.tail(m_na)) / m_dt;
   m_ddq_min_due_to_vel = (m_v_lb - v.tail(m_na)) / m_dt;
 
-  // take most conservative limit between vel and acc
+  // Intersect hard velocity, acceleration, and optional position bounds.
   int offset = m_nv - m_na;
   for (int i = 0; i < m_na; i++) {
     // TODO: use mask here
@@ -113,6 +136,17 @@ const ConstraintBase& TaskJointBounds::compute(const double, ConstRefVector,
         std::min(m_ddq_max_due_to_vel(i), m_a_ub(i));
     m_constraint.lowerBound()(offset + i) =
         std::max(m_ddq_min_due_to_vel(i), m_a_lb(i));
+    if (m_impose_position_bounds) {
+      const double q_free = q.tail(m_na)(i) + m_dt * v.tail(m_na)(i);
+      const double position_scale = 2.0 / (m_dt * m_dt);
+      m_constraint.upperBound()(offset + i) =
+          std::min(m_constraint.upperBound()(offset + i),
+                   position_scale * (m_q_ub(i) - q_free));
+      m_constraint.lowerBound()(offset + i) =
+          std::max(m_constraint.lowerBound()(offset + i),
+                   position_scale * (m_q_lb(i) - q_free));
+      // Preserve an empty intersection: relaxing it would discard a hard bound.
+    }
   }
   return m_constraint;
 }

@@ -18,6 +18,8 @@
 #ifndef __tsid_python_task_joint_bounds_hpp__
 #define __tsid_python_task_joint_bounds_hpp__
 
+#include <pinocchio/fwd.hpp>
+
 #include "tsid/bindings/python/fwd.hpp"
 
 #include "tsid/tasks/task-joint-bounds.hpp"
@@ -41,6 +43,9 @@ struct TaskJointBoundsPythonVisitor
         .add_property("dim", &Task::dim, "return dimension size")
         .def("setTimeStep", &TaskJointBoundsPythonVisitor::setTimeStep,
              bp::args("dt"))
+        .def("setPositionBounds",
+             &TaskJointBoundsPythonVisitor::setPositionBounds,
+             bp::args("lower", "upper"))
         .def("setVelocityBounds",
              &TaskJointBoundsPythonVisitor::setVelocityBounds,
              bp::args("lower", "upper"))
@@ -50,6 +55,14 @@ struct TaskJointBoundsPythonVisitor
         .def("compute", &TaskJointBoundsPythonVisitor::compute,
              bp::args("t", "q", "v", "data"))
         .def("getConstraint", &TaskJointBoundsPythonVisitor::getConstraint)
+        .add_property("getPositionLowerBounds",
+                      bp::make_function(
+                          &TaskJointBoundsPythonVisitor::getPositionLowerBounds,
+                          bp::return_value_policy<bp::copy_const_reference>()))
+        .add_property("getPositionUpperBounds",
+                      bp::make_function(
+                          &TaskJointBoundsPythonVisitor::getPositionUpperBounds,
+                          bp::return_value_policy<bp::copy_const_reference>()))
         .add_property(
             "getAccelerationLowerBounds",
             bp::make_function(
@@ -90,6 +103,12 @@ struct TaskJointBoundsPythonVisitor
                                self.getConstraint().upperBound());
     return cons;
   }
+  static const Eigen::VectorXd& getPositionLowerBounds(const Task& self) {
+    return self.getPositionLowerBounds();
+  }
+  static const Eigen::VectorXd& getPositionUpperBounds(const Task& self) {
+    return self.getPositionUpperBounds();
+  }
   static const Eigen::VectorXd& getAccelerationLowerBounds(const Task& self) {
     return self.getAccelerationLowerBounds();
   }
@@ -104,6 +123,10 @@ struct TaskJointBoundsPythonVisitor
   }
   static void setTimeStep(Task& self, const double dt) {
     return self.setTimeStep(dt);
+  }
+  static void setPositionBounds(Task& self, const Eigen::VectorXd lower,
+                                const Eigen::VectorXd upper) {
+    return self.setPositionBounds(lower, upper);
   }
   static void setVelocityBounds(Task& self, const Eigen::VectorXd lower,
                                 const Eigen::VectorXd upper) {

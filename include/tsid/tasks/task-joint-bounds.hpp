@@ -18,6 +18,8 @@
 #ifndef __invdyn_task_joint_bounds_hpp__
 #define __invdyn_task_joint_bounds_hpp__
 
+#include <pinocchio/fwd.hpp>
+
 #include <tsid/tasks/task-motion.hpp>
 #include <tsid/math/constraint-bound.hpp>
 
@@ -42,8 +44,13 @@ class TaskJointBounds : public TaskMotion {
   const ConstraintBase& getConstraint() const override;
 
   void setTimeStep(double dt);
+  // Enable hard bounds on q + dt*v + 0.5*dt^2*dv for Euclidean
+  // actuated joint coordinates. This bounds the prediction endpoint only.
+  void setPositionBounds(ConstRefVector lower, ConstRefVector upper);
   void setVelocityBounds(ConstRefVector lower, ConstRefVector upper);
   void setAccelerationBounds(ConstRefVector lower, ConstRefVector upper);
+  const Vector& getPositionLowerBounds() const;
+  const Vector& getPositionUpperBounds() const;
   const Vector& getAccelerationLowerBounds() const;
   const Vector& getAccelerationUpperBounds() const;
   const Vector& getVelocityLowerBounds() const;
@@ -52,12 +59,14 @@ class TaskJointBounds : public TaskMotion {
   virtual void setMask(math::ConstRefVector mask) override;
 
  protected:
+  Vector m_q_lb, m_q_ub;
   Vector m_v_lb, m_v_ub;
   Vector m_a_lb, m_a_ub;
   Vector m_ddq_max_due_to_vel, m_ddq_min_due_to_vel;
   ConstraintBound m_constraint;
   double m_dt;
   int m_nv, m_na;
+  bool m_impose_position_bounds = false;
 };
 
 }  // namespace tasks
